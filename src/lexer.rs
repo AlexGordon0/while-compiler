@@ -1,3 +1,11 @@
+use std::iter::Peekable;
+use std::str::Chars;
+
+#[derive(Debug)]
+pub struct LexError {
+    message: String,
+}
+
 #[derive(Debug)]
 pub enum Token {
     If,
@@ -27,48 +35,42 @@ pub enum Token {
     End,
 }
 
-pub struct Lexer {
-    text: String,
+pub struct Lexer<'a> {
+    input: Peekable<Chars<'a>>,
 }
 
-impl Lexer {
-    pub fn new(text: String) -> Lexer {
-        Lexer { text }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.text.chars().next()
-    }
-
-    fn eat(&mut self, c: char) {
-        if let Some(ch) = self.peek() {
-            if c == ch {
-                self.text.remove(0);
-            } else {
-                panic!("Expected {ch}, got {c}");
-            }
-        } else {
-            panic!("Input is empty");
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Lexer {
+            input: input.chars().peekable(),
         }
     }
 
+    fn peek(&mut self) -> Option<char> {
+        self.input.peek().copied()
+    }
+
+    fn bump(&mut self) {
+        self.input.next();
+    }
+
     fn lex_number(&mut self) -> Token {
-        let mut lexeme = String::from("");
+        let mut lexeme = String::new();
         while let Some(ch) = self.peek()
             && ch.is_ascii_digit()
         {
-            self.eat(ch);
+            self.bump();
             lexeme.push(ch);
         }
         Token::Num(lexeme)
     }
 
     fn lex_kw_or_id(&mut self) -> Token {
-        let mut lexeme = String::from("");
+        let mut lexeme = String::new();
         while let Some(ch) = self.peek()
-            && (ch.is_ascii_alphanumeric() || ch == '`')
+            && (ch.is_ascii_alphanumeric() || ch == '_')
         {
-            self.eat(ch);
+            self.bump();
             lexeme.push(ch);
         }
         match lexeme.as_str() {
@@ -84,66 +86,78 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self) -> Vec<Token> {
+    pub fn lex(&mut self) -> Result<Vec<Token>, LexError> {
         let mut tokens = vec![];
         while let Some(ch) = self.peek() {
             match ch {
                 '+' => {
-                    self.eat('+');
+                    self.bump();
                     tokens.push(Token::Plus);
                 }
                 '-' => {
-                    self.eat('-');
+                    self.bump();
                     tokens.push(Token::Minus);
                 }
                 '*' => {
-                    self.eat('*');
+                    self.bump();
                     tokens.push(Token::Star);
                 }
                 '=' => {
-                    self.eat('=');
+                    self.bump();
                     tokens.push(Token::Equals);
                 }
                 '!' => {
-                    self.eat('!');
+                    self.bump();
                     tokens.push(Token::Not);
                 }
                 '(' => {
-                    self.eat('(');
+                    self.bump();
                     tokens.push(Token::LeftParen);
                 }
                 ')' => {
-                    self.eat(')');
+                    self.bump();
                     tokens.push(Token::RightParen);
                 }
                 '{' => {
-                    self.eat('{');
+                    self.bump();
                     tokens.push(Token::LeftBracket);
                 }
                 '}' => {
-                    self.eat('}');
+                    self.bump();
                     tokens.push(Token::RightBracket);
                 }
                 ';' => {
-                    self.eat(';');
+                    self.bump();
                     tokens.push(Token::Semicolon);
                 }
                 '&' => {
-                    self.eat('&');
-                    self.eat('&');
+                    self.bump();
+                    if Some('&') == self.peek() {
+                        self.bump();
+                    } else {
+                        return Err(LexError {
+                            message: "Expected &".to_string(),
+                        });
+                    }
                     tokens.push(Token::And);
                 }
                 '|' => {
-                    self.eat('|');
-                    self.eat('|');
+                    self.bump();
+                    if Some('|') == self.peek() {
+                        self.bump();
+                    } else {
+                        return Err(LexError {
+                            message: "Expected |".to_string(),
+                        });
+                    }
                     tokens.push(Token::Or);
                 }
                 '<' => {
-                    self.eat('<');
-                    if let Some(ch1) = self.peek() {
-                        match ch1 {
+                    self.bump();
+                    if let Some(next_ch) = self.peek() {
+                        match next_ch {
                             '-' => {
-                                self.eat('-');
+                                self.bump();
                                 tokens.push(Token::Assn);
                             }
                             _ => tokens.push(Token::LessThan),
@@ -152,11 +166,15 @@ impl Lexer {
                 }
                 '0'..='9' => tokens.push(self.lex_number()),
                 'a'..='z' => tokens.push(self.lex_kw_or_id()),
-                ' ' => self.eat(ch),
-                _ => panic!("Unexpected character: {ch}"),
+                ch if ch.is_whitespace() => self.bump(),
+                _ => {
+                    return Err(LexError {
+                        message: format!("Unexpected character: '{ch}'"),
+                    });
+                }
             }
         }
         tokens.push(Token::End);
-        tokens
+        Ok(tokens)
     }
 }
