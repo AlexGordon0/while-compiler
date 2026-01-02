@@ -1,6 +1,8 @@
 mod lexer;
+mod parser;
 
 use crate::lexer::Lexer;
+use crate::parser::Parser;
 use std::{env, process};
 
 fn main() {
@@ -9,12 +11,25 @@ fn main() {
         eprintln!("Usage: cargo run -- \"<input>\"");
         process::exit(1);
     }
+
     let mut lexer = Lexer::new(&args[1]);
-    match lexer.lex() {
-        Ok(tokens) => println!("{tokens:?}"),
+    let tokens = match lexer.lex() {
+        Ok(tokens) => {
+            println!("{tokens:?}");
+            tokens
+        }
         Err(e) => {
             eprintln!("{e:?}");
             process::exit(1);
         }
     };
+
+    let mut parser = Parser::new(&tokens);
+    match parser.parse() {
+        Ok(()) => println!("Parsed correctly"),
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    }
 }

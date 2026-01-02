@@ -6,7 +6,7 @@ pub struct LexError {
     message: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     If,
     Then,
@@ -17,7 +17,7 @@ pub enum Token {
     Id(String),
     Plus,
     Minus,
-    Star,
+    Times,
     True,
     False,
     LessThan,
@@ -41,7 +41,7 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Lexer {
+        Self {
             input: input.chars().peekable(),
         }
     }
@@ -100,7 +100,7 @@ impl<'a> Lexer<'a> {
                 }
                 '*' => {
                     self.bump();
-                    tokens.push(Token::Star);
+                    tokens.push(Token::Times);
                 }
                 '=' => {
                     self.bump();
