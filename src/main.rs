@@ -26,7 +26,7 @@ fn main() {
 
     let mut parser = Parser::new(&tokens);
     match parser.parse() {
-        Ok(()) => println!("Parsed correctly"),
+        Ok(tree) => println!("{tree:?}"),
         Err(e) => {
             eprintln!("{e}");
             process::exit(1);

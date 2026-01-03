@@ -2,9 +2,8 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 #[derive(Debug)]
-pub struct LexError {
-    message: String,
-}
+#[allow(dead_code)]
+pub struct LexError(String);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
@@ -25,7 +24,7 @@ pub enum Token {
     And,
     Or,
     Not,
-    Num(String),
+    Num(i64),
     LeftParen,
     RightParen,
     LeftBracket,
@@ -62,7 +61,12 @@ impl<'a> Lexer<'a> {
             self.bump();
             lexeme.push(ch);
         }
-        Token::Num(lexeme)
+        let n = if let Ok(n) = lexeme.parse::<i64>() {
+            n
+        } else {
+            unreachable!()
+        };
+        Token::Num(n)
     }
 
     fn lex_kw_or_id(&mut self) -> Token {
@@ -135,9 +139,7 @@ impl<'a> Lexer<'a> {
                     if Some('&') == self.peek() {
                         self.bump();
                     } else {
-                        return Err(LexError {
-                            message: "Expected &".to_string(),
-                        });
+                        return Err(LexError("Expected &".to_string()));
                     }
                     tokens.push(Token::And);
                 }
@@ -146,9 +148,7 @@ impl<'a> Lexer<'a> {
                     if Some('|') == self.peek() {
                         self.bump();
                     } else {
-                        return Err(LexError {
-                            message: "Expected |".to_string(),
-                        });
+                        return Err(LexError("Expected |".to_string()));
                     }
                     tokens.push(Token::Or);
                 }
@@ -168,9 +168,7 @@ impl<'a> Lexer<'a> {
                 'a'..='z' => tokens.push(self.lex_kw_or_id()),
                 ch if ch.is_whitespace() => self.bump(),
                 _ => {
-                    return Err(LexError {
-                        message: format!("Unexpected character: '{ch}'"),
-                    });
+                    return Err(LexError(format!("Unexpected character: '{ch}'")));
                 }
             }
         }
