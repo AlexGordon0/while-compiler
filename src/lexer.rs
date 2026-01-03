@@ -53,7 +53,7 @@ impl<'a> Lexer<'a> {
         self.input.next();
     }
 
-    fn lex_number(&mut self) -> Token {
+    fn lex_number(&mut self) -> Result<Token, LexError> {
         let mut lexeme = String::new();
         while let Some(ch) = self.peek()
             && ch.is_ascii_digit()
@@ -64,9 +64,9 @@ impl<'a> Lexer<'a> {
         let n = if let Ok(n) = lexeme.parse::<i64>() {
             n
         } else {
-            unreachable!()
+            return Err(LexError(format!("{lexeme} exceeds i64 limit")));
         };
-        Token::Num(n)
+        Ok(Token::Num(n))
     }
 
     fn lex_kw_or_id(&mut self) -> Token {
@@ -154,17 +154,14 @@ impl<'a> Lexer<'a> {
                 }
                 '<' => {
                     self.bump();
-                    if let Some(next_ch) = self.peek() {
-                        match next_ch {
-                            '-' => {
-                                self.bump();
-                                tokens.push(Token::Assn);
-                            }
-                            _ => tokens.push(Token::LessThan),
-                        }
+                    if self.peek() == Some('-') {
+                        self.bump();
+                        tokens.push(Token::Assn);
+                    } else {
+                        tokens.push(Token::LessThan);
                     }
                 }
-                '0'..='9' => tokens.push(self.lex_number()),
+                '0'..='9' => tokens.push(self.lex_number()?),
                 'a'..='z' => tokens.push(self.lex_kw_or_id()),
                 ch if ch.is_whitespace() => self.bump(),
                 _ => {

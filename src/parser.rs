@@ -22,7 +22,6 @@ impl std::fmt::Display for ParseError {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Stmt {
     Skip,
     Assn(String, Exp),
@@ -32,7 +31,6 @@ pub enum Stmt {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Exp {
     True,
     False,
@@ -150,8 +148,8 @@ impl<'a> Parser<'a> {
             Some(Token::Semicolon) => {
                 self.eat(Token::Semicolon)?;
                 let s1 = self.stmt()?;
-                let s2 = self.stmts(s)?;
-                Stmt::Seq(Box::new(s1), Box::new(s2))
+                let s2 = self.stmts(s1)?;
+                Stmt::Seq(Box::new(s), Box::new(s2))
             }
             _ => return Err(self.error("$, ), ;")),
         };
