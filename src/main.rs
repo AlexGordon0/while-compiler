@@ -65,7 +65,12 @@ fn parse_args() -> Result<Config, String> {
         .get(1)
         .map(|s| s.parse::<i64>())
         .transpose()
-        .map_err(|_| format!("Unable to parse {:?}. Argument must be an integer.", positional.get(1)))?;
+        .map_err(|_| {
+            format!(
+                "Unable to parse {:?}. Argument must be an integer.",
+                positional.get(1)
+            )
+        })?;
 
     Ok(Config {
         file,

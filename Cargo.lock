@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "compwhiler"
+name = "while_compiler"
 version = "0.1.0"
