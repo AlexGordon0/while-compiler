@@ -173,3 +173,138 @@ impl<'a> Lexer<'a> {
         Ok(tokens)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lex(input: &str) -> Vec<Token> {
+        Lexer::new(input).lex().unwrap()
+    }
+
+    #[test]
+    fn empty_input_is_just_end() {
+        assert_eq!(lex(""), vec![Token::End]);
+        assert_eq!(lex("  \n\t "), vec![Token::End]);
+    }
+
+    #[test]
+    fn keywords() {
+        assert_eq!(
+            lex("if then else while do skip true false"),
+            vec![
+                Token::If,
+                Token::Then,
+                Token::Else,
+                Token::While,
+                Token::Do,
+                Token::Skip,
+                Token::True,
+                Token::False,
+                Token::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn identifiers() {
+        assert_eq!(
+            lex("x foo_bar a1 iff"),
+            vec![
+                Token::Id("x".to_string()),
+                Token::Id("foo_bar".to_string()),
+                Token::Id("a1".to_string()),
+                Token::Id("iff".to_string()),
+                Token::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(
+            lex("0 42 9223372036854775807"),
+            vec![
+                Token::Num(0),
+                Token::Num(42),
+                Token::Num(i64::MAX),
+                Token::End
+            ]
+        );
+    }
+
+    #[test]
+    fn operators_and_punctuation() {
+        assert_eq!(
+            lex("+ - * = ! ( ) { } ; && || < <-"),
+            vec![
+                Token::Plus,
+                Token::Minus,
+                Token::Times,
+                Token::Equals,
+                Token::Not,
+                Token::LeftParen,
+                Token::RightParen,
+                Token::LeftBracket,
+                Token::RightBracket,
+                Token::Semicolon,
+                Token::And,
+                Token::Or,
+                Token::LessThan,
+                Token::Assn,
+                Token::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn no_whitespace_needed() {
+        assert_eq!(
+            lex("x<-x*2;y<1"),
+            vec![
+                Token::Id("x".to_string()),
+                Token::Assn,
+                Token::Id("x".to_string()),
+                Token::Times,
+                Token::Num(2),
+                Token::Semicolon,
+                Token::Id("y".to_string()),
+                Token::LessThan,
+                Token::Num(1),
+                Token::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn less_than_then_negative_is_assignment() {
+        // `<-` is always lexed as assignment, even where `< -` was intended.
+        assert_eq!(
+            lex("a <-1"),
+            vec![
+                Token::Id("a".to_string()),
+                Token::Assn,
+                Token::Num(1),
+                Token::End
+            ]
+        );
+    }
+
+    #[test]
+    fn number_overflow_is_error() {
+        assert!(Lexer::new("99999999999999999999").lex().is_err());
+    }
+
+    #[test]
+    fn single_ampersand_or_pipe_is_error() {
+        assert!(Lexer::new("a & b").lex().is_err());
+        assert!(Lexer::new("a | b").lex().is_err());
+    }
+
+    #[test]
+    fn unexpected_characters_are_errors() {
+        assert!(Lexer::new("X <- 1").lex().is_err());
+        assert!(Lexer::new("x <- 1 / 2").lex().is_err());
+        assert!(Lexer::new("_x <- 1").lex().is_err());
+    }
+}

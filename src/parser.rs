@@ -21,7 +21,7 @@ impl std::fmt::Display for ParseError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Skip,
     Assn(String, Exp),
@@ -30,7 +30,7 @@ pub enum Stmt {
     While(Exp, Box<Stmt>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Exp {
     True,
     False,
@@ -397,5 +397,172 @@ impl<'a> Parser<'a> {
         };
 
         Ok(exp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    fn parse(input: &str) -> Result<Stmt, ParseError> {
+        let tokens = Lexer::new(input).lex().unwrap();
+        Parser::new(&tokens).parse()
+    }
+
+    fn var(s: &str) -> Box<Exp> {
+        Box::new(Exp::Var(s.to_string()))
+    }
+
+    fn num(n: i64) -> Box<Exp> {
+        Box::new(Exp::Num(n))
+    }
+
+    #[test]
+    fn skip() {
+        assert_eq!(parse("skip").unwrap(), Stmt::Skip);
+    }
+
+    #[test]
+    fn assignment() {
+        assert_eq!(
+            parse("x <- 1").unwrap(),
+            Stmt::Assn("x".to_string(), Exp::Num(1))
+        );
+    }
+
+    #[test]
+    fn sequence_is_right_nested() {
+        assert_eq!(
+            parse("skip; skip; skip").unwrap(),
+            Stmt::Seq(
+                Box::new(Stmt::Skip),
+                Box::new(Stmt::Seq(Box::new(Stmt::Skip), Box::new(Stmt::Skip)))
+            )
+        );
+    }
+
+    #[test]
+    fn block() {
+        assert_eq!(
+            parse("{ skip; skip }").unwrap(),
+            Stmt::Seq(Box::new(Stmt::Skip), Box::new(Stmt::Skip))
+        );
+    }
+
+    #[test]
+    fn conditional() {
+        assert_eq!(
+            parse("if x < 1 then y <- 1 else y <- 2").unwrap(),
+            Stmt::Cond(
+                Exp::Less(var("x"), num(1)),
+                Box::new(Stmt::Assn("y".to_string(), Exp::Num(1))),
+                Box::new(Stmt::Assn("y".to_string(), Exp::Num(2)))
+            )
+        );
+    }
+
+    #[test]
+    fn while_loop() {
+        assert_eq!(
+            parse("while true do skip").unwrap(),
+            Stmt::While(Exp::True, Box::new(Stmt::Skip))
+        );
+    }
+
+    #[test]
+    fn times_binds_tighter_than_plus() {
+        assert_eq!(
+            parse("x <- 1 + 2 * 3").unwrap(),
+            Stmt::Assn(
+                "x".to_string(),
+                Exp::Plus(num(1), Box::new(Exp::Times(num(2), num(3))))
+            )
+        );
+    }
+
+    #[test]
+    fn parentheses_override_precedence() {
+        assert_eq!(
+            parse("x <- (1 + 2) * 3").unwrap(),
+            Stmt::Assn(
+                "x".to_string(),
+                Exp::Times(Box::new(Exp::Plus(num(1), num(2))), num(3))
+            )
+        );
+    }
+
+    #[test]
+    fn boolean_precedence() {
+        // || < && < ! < relational
+        assert_eq!(
+            parse("if a < 1 && b = 2 || !c < 3 then skip else skip").unwrap(),
+            Stmt::Cond(
+                Exp::Or(
+                    Box::new(Exp::And(
+                        Box::new(Exp::Less(var("a"), num(1))),
+                        Box::new(Exp::Eq(var("b"), num(2)))
+                    )),
+                    Box::new(Exp::Not(Box::new(Exp::Less(var("c"), num(3)))))
+                ),
+                Box::new(Stmt::Skip),
+                Box::new(Stmt::Skip)
+            )
+        );
+    }
+
+    #[test]
+    fn parenthesised_boolean() {
+        assert_eq!(
+            parse("while !(x = 0 || true) do skip").unwrap(),
+            Stmt::While(
+                Exp::Not(Box::new(Exp::Or(
+                    Box::new(Exp::Eq(var("x"), num(0))),
+                    Box::new(Exp::True)
+                ))),
+                Box::new(Stmt::Skip)
+            )
+        );
+    }
+
+    #[test]
+    fn empty_program_is_error() {
+        assert!(parse("").is_err());
+    }
+
+    #[test]
+    fn trailing_semicolon_is_error() {
+        assert!(parse("x <- 1;").is_err());
+    }
+
+    #[test]
+    fn missing_else_is_error() {
+        assert!(parse("if true then skip").is_err());
+    }
+
+    #[test]
+    fn unclosed_block_is_error() {
+        assert!(parse("{ skip").is_err());
+    }
+
+    #[test]
+    fn unclosed_paren_is_error() {
+        assert!(parse("x <- (1 + 2").is_err());
+    }
+
+    #[test]
+    fn missing_operand_is_error() {
+        assert!(parse("x <- 1 +").is_err());
+    }
+
+    #[test]
+    fn chained_relations_are_error() {
+        assert!(parse("if 1 < 2 < 3 then skip else skip").is_err());
+    }
+
+    #[test]
+    fn error_reports_found_token() {
+        let err = parse("x 1").unwrap_err();
+        assert_eq!(err.found, Some(Token::Num(1)));
     }
 }
