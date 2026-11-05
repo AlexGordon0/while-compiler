@@ -132,21 +132,7 @@ Each nonterminal has a function of the same name in `src/parser.rs`.
 
 Whitespace is ignored. The language has no comments.
 
-### Things to know
-
-- **`;` separates statements; it does not end them.** `x <- 1; y <- 2` is valid, but `x <- 1;` is a parse error.
-- **Precedence**, from loosest to tightest: `||`, `&&`, `!`, `<` / `=`, `+` / `-`, `*`. Use parentheses to override it. Comparisons don't chain, so `1 < 2 < 3` is a parse error.
-- **Every `if` needs an `else`.** Use `skip` for a branch that does nothing: `if x < 0 then x <- 0 else skip`.
-- **Variables don't need declaring.** A variable that has never been assigned reads as `0`, and it isn't included in the printed output.
-- **Numbers and booleans can stand in for each other.** In a condition, a number counts as true when it is greater than `0`. In arithmetic, `true` counts as `1` and `false` as `0`, so `x <- (a = 3) * 10` sets `x` to `10` when `a` is 3.
-- **Arithmetic uses 64-bit signed integers.** The interpreter and compiled programs behave the same except in two cases:
-
-  | Case | Interpreter | Compiled program |
-  | --- | --- | --- |
-  | Overflow | Panics in debug builds | Wraps around |
-  | Non-integer argument | Rejects it | Reads it as `0` (it uses `atol`) |
-
-## How the code generator works
+## Code generation
 
 - Every expression leaves its value in `rax`. Booleans are `0`/`1`, and a condition is true when `rax > 0`. These are the same rules the interpreter uses, so the two back ends agree.
 - Binary operators evaluate the left operand, push it, evaluate the right operand into `rcx`, pop the left operand back into `rax`, and combine them. `&&` and `||` short-circuit.
