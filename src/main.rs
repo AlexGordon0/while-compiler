@@ -1,7 +1,9 @@
+mod codegen;
 mod eval;
 mod lexer;
 mod parser;
 
+use crate::codegen::CodeGen;
 use crate::parser::Parser;
 use crate::{eval::Evaluator, lexer::Lexer};
 use std::collections::HashMap;
@@ -12,6 +14,7 @@ struct Config {
     initial_arg: Option<i64>,
     print_tokens: bool,
     print_ast: bool,
+    emit_asm: bool,
 }
 
 fn run_program(
@@ -19,24 +22,37 @@ fn run_program(
     state: &mut HashMap<String, i64>,
     print_tokens: bool,
     print_ast: bool,
+    emit_asm: bool,
 ) -> Result<(), String> {
     let mut lexer = Lexer::new(program);
     let tokens = lexer.lex().map_err(|e| format!("{e:?}"))?;
 
     if print_tokens {
-        println!("TOKENS:\n{tokens:?}");
+        if !emit_asm {
+            println!("TOKENS:\n{tokens:?}");
+        } else {
+            eprintln!("TOKENS:\n{tokens:?}");
+        }
     }
 
     let mut parser = Parser::new(&tokens);
     let ast = parser.parse().map_err(|e| format!("{e:?}"))?;
 
     if print_ast {
-        println!("AST\n{ast:#?}");
+        if !emit_asm {
+            println!("AST\n{ast:#?}");
+        } else {
+            eprintln!("AST\n{ast:#?}");
+        }
     }
 
-    let mut evaluator = Evaluator::new(state);
-    evaluator.execute_statement(&ast);
-    println!("Terminal state:\n{:?}", state);
+    if emit_asm {
+        println!("{}", CodeGen::generate(&ast));
+    } else {
+        let mut evaluator = Evaluator::new(state);
+        evaluator.execute_statement(&ast);
+        println!("Terminal state:\n{:?}", state);
+    }
 
     Ok(())
 }
@@ -44,19 +60,22 @@ fn run_program(
 fn parse_args() -> Result<Config, String> {
     let mut print_tokens = false;
     let mut print_ast = false;
+    let mut emit_asm = false;
     let mut positional: Vec<String> = Vec::new();
 
     for arg in env::args().skip(1) {
         match arg.as_str() {
             "--print-tokens" => print_tokens = true,
             "--print-ast" => print_ast = true,
+            "--emit-asm" => emit_asm = true,
             _ => positional.push(arg),
         }
     }
 
     if !(1..=2).contains(&positional.len()) {
         return Err(
-            "Usage: cargo run -- <file> [while_arg] [--print-tokens] [--print-ast]".to_string(),
+            "Usage: cargo run -- <file> [while_arg] [--print-tokens] [--print-ast] [--emit-asm]"
+                .to_string(),
         );
     }
 
@@ -77,6 +96,7 @@ fn parse_args() -> Result<Config, String> {
         initial_arg,
         print_tokens,
         print_ast,
+        emit_asm,
     })
 }
 
@@ -96,7 +116,14 @@ fn main() {
         state.insert(String::from("a"), arg);
     }
 
-    run_program(&contents, &mut state, config.print_tokens, config.print_ast).unwrap_or_else(|e| {
+    run_program(
+        &contents,
+        &mut state,
+        config.print_tokens,
+        config.print_ast,
+        config.emit_asm,
+    )
+    .unwrap_or_else(|e| {
         eprintln!("{e}");
     });
 }

@@ -23,9 +23,9 @@ impl<'a> Evaluator<'a> {
         match s {
             Stmt::Skip => (),
             Stmt::Assn(s, value) => self.update_var(s, self.evaluate_arithmetic(value)),
-            Stmt::Seq(a, b) => {
-                self.execute_statement(a);
-                self.execute_statement(b);
+            Stmt::Seq(s1, s2) => {
+                self.execute_statement(s1);
+                self.execute_statement(s2);
             }
             Stmt::Cond(c, s1, s2) => {
                 if self.evaluate_boolean(c) {
