@@ -2,8 +2,13 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct LexError(String);
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "LexError: {}", self.0)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
