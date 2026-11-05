@@ -260,3 +260,287 @@ impl CodeGen {
         self.out.push('\n');
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eval::Evaluator;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static BUILD_ID: AtomicUsize = AtomicUsize::new(0);
+
+    fn parse(input: &str) -> Stmt {
+        let tokens = Lexer::new(input).lex().unwrap();
+        Parser::new(&tokens).parse().unwrap()
+    }
+
+    fn toolchain_available() -> bool {
+        let found = |tool: &str| Command::new(tool).arg("--version").output().is_ok();
+        found("nasm") && found("gcc")
+    }
+
+    fn check(cmd: &mut Command) {
+        let output = cmd.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{cmd:?} failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // Compiles `input` with nasm and gcc, runs it with `arg`, and returns the variables it prints.
+    fn compile_and_run(input: &str, arg: Option<i64>) -> HashMap<String, i64> {
+        let id = BUILD_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("while_codegen_{}_{id}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (asm, obj, exe) = (dir.join("prog.asm"), dir.join("prog.o"), dir.join("prog"));
+
+        fs::write(&asm, CodeGen::generate(&parse(input))).unwrap();
+        check(
+            Command::new("nasm")
+                .args(["-f", "elf64"])
+                .arg(&asm)
+                .arg("-o")
+                .arg(&obj),
+        );
+        check(
+            Command::new("gcc")
+                .arg("-no-pie")
+                .arg(&obj)
+                .arg("-o")
+                .arg(&exe),
+        );
+
+        let mut run = Command::new(&exe);
+        if let Some(a) = arg {
+            run.arg(a.to_string());
+        }
+        let output = run.output().unwrap();
+        assert!(
+            output.status.success(),
+            "program exited with {}",
+            output.status
+        );
+        fs::remove_dir_all(&dir).ok();
+
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let (name, value) = line.split_once(": ").unwrap();
+                (name.to_string(), value.parse().unwrap())
+            })
+            .collect()
+    }
+
+    fn interpret(input: &str, arg: Option<i64>) -> HashMap<String, i64> {
+        let mut state = HashMap::new();
+        if let Some(a) = arg {
+            state.insert("a".to_string(), a);
+        }
+        Evaluator::new(&mut state).execute_statement(&parse(input));
+        state
+    }
+
+    // Asserts that the compiled program prints exactly the interpreter's terminal state.
+    fn assert_matches_interpreter(input: &str, arg: Option<i64>) {
+        if !toolchain_available() {
+            eprintln!("skipping: nasm or gcc not found");
+            return;
+        }
+        assert_eq!(
+            compile_and_run(input, arg),
+            interpret(input, arg),
+            "program: {input}, arg: {arg:?}"
+        );
+    }
+
+    #[test]
+    fn skip_without_argument_prints_nothing() {
+        assert_matches_interpreter("skip", None);
+    }
+
+    #[test]
+    fn argument_is_stored_in_a() {
+        assert_matches_interpreter("skip", Some(7));
+        assert_matches_interpreter("skip", Some(-5));
+        assert_matches_interpreter("skip", Some(0));
+        assert_matches_interpreter("x <- a * 2", Some(21));
+    }
+
+    #[test]
+    fn assignment() {
+        assert_matches_interpreter("x <- 5", None);
+        assert_matches_interpreter("x <- 1; x <- x + 1; x <- x * 10", None);
+    }
+
+    #[test]
+    fn unset_variables_read_as_zero_and_are_not_printed() {
+        assert_matches_interpreter("x <- y + 1", None);
+    }
+
+    #[test]
+    fn large_literal() {
+        assert_matches_interpreter("x <- 9223372036854775807", None);
+    }
+
+    #[test]
+    fn arithmetic() {
+        for prog in [
+            "x <- 2 * 3 + 4 * 5",
+            "x <- (2 + 3) * 4",
+            "x <- 10 - 3 - 2",
+            "x <- 20 - 2 * 3 - 4",
+            "x <- 1 - 2 + 3",
+            "x <- (10 - 3) - (4 - 1)",
+            "x <- 0 - 5",
+            "x <- (0 - 3) * (0 - 4)",
+        ] {
+            assert_matches_interpreter(prog, None);
+        }
+    }
+
+    #[test]
+    fn boolean_operators_in_conditions() {
+        let conditions = [
+            "true",
+            "false",
+            "!true",
+            "!!true",
+            "1 = 1",
+            "1 = 2",
+            "1 < 2",
+            "2 < 1",
+            "0 - 1 < 0",
+            "true && false",
+            "true && true",
+            "false || true",
+            "false || false",
+            "true || false && false",
+            "(true || false) && false",
+            "!(1 = 1) || 1 < 2 && 2 < 3",
+        ];
+        // One program with every condition, which also checks labels stay unique.
+        let prog = conditions
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("if {c} then r{i} <- 1 else r{i} <- 0"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        assert_matches_interpreter(&prog, None);
+    }
+
+    #[test]
+    fn boolean_as_arithmetic_is_one_or_zero() {
+        for prog in [
+            "x <- (1 < 2)",
+            "x <- (2 < 1)",
+            "x <- true",
+            "x <- false",
+            "x <- (!(1 = 1) || true && 1 < 2)",
+            "x <- (a = 3) * 10 + 1",
+        ] {
+            assert_matches_interpreter(prog, Some(3));
+        }
+    }
+
+    #[test]
+    fn arithmetic_as_condition_is_truthy_when_positive() {
+        let prog = "if a then r <- 1 else r <- 0";
+        for a in [1, 0, -1, 100] {
+            assert_matches_interpreter(prog, Some(a));
+        }
+        assert_matches_interpreter("if !a then r <- 1 else r <- 0", Some(-1));
+        assert_matches_interpreter("if a && 2 then r <- 1 else r <- 0", Some(5));
+        assert_matches_interpreter("if a || 0 then r <- 1 else r <- 0", Some(0));
+    }
+
+    #[test]
+    fn conditional_branches() {
+        let prog = "if a < 5 then r <- 1 else r <- 2";
+        assert_matches_interpreter(prog, Some(3));
+        assert_matches_interpreter(prog, Some(5));
+    }
+
+    #[test]
+    fn variable_assigned_only_in_untaken_branch_is_not_printed() {
+        assert_matches_interpreter("if false then x <- 1 else skip", None);
+        assert_matches_interpreter("while false do x <- 1", None);
+    }
+
+    #[test]
+    fn nested_conditionals() {
+        let prog = "if a < 10 then { if a < 5 then r <- 1 else r <- 2 } else { if a < 15 then r <- 3 else r <- 4 }";
+        for a in [0, 7, 12, 20] {
+            assert_matches_interpreter(prog, Some(a));
+        }
+    }
+
+    #[test]
+    fn while_loops() {
+        assert_matches_interpreter(
+            "i <- 0; s <- 0; while i < 5 do { i <- i + 1; s <- s + i }",
+            None,
+        );
+        assert_matches_interpreter(
+            "i <- 0; n <- 0; while i < 3 do { j <- 0; while j < 4 do { n <- n + 1; j <- j + 1 }; i <- i + 1 }",
+            None,
+        );
+    }
+
+    #[test]
+    fn factorial_example() {
+        let prog = include_str!("../factorial.wh");
+        for a in [0, 1, 5, 10, 20] {
+            assert_matches_interpreter(prog, Some(a));
+        }
+        assert_matches_interpreter(prog, None);
+    }
+
+    #[test]
+    fn variables_named_like_asm_keywords() {
+        assert_matches_interpreter(
+            "rax <- 1; byte <- 2; section <- 3; main <- 4; printf <- 5; fmt <- 6; start <- 7; ret <- rax + byte",
+            None,
+        );
+    }
+
+    #[test]
+    fn variables_named_like_generated_labels() {
+        assert_matches_interpreter(
+            "l0 <- 1; skip_a <- 2; set_a <- 3; v_a <- 4; name_a <- 5; a <- 6",
+            None,
+        );
+    }
+
+    #[test]
+    fn overflow_wraps() {
+        // The interpreter panics on overflow in debug builds; compiled code wraps.
+        if !toolchain_available() {
+            return;
+        }
+        let state = compile_and_run("x <- 9223372036854775807 + 1", None);
+        assert_eq!(state["x"], i64::MIN);
+    }
+
+    #[test]
+    fn labels_are_unique() {
+        let asm = CodeGen::generate(&parse(
+            "while a < 3 do { if a = 1 && b < 2 || c then a <- a + 1 else { while b < 2 do b <- b + 1 } }; if a then skip else skip",
+        ));
+        let mut seen = BTreeSet::new();
+        for line in asm.lines() {
+            let line = line.trim();
+            if let Some((label, _)) = line.split_once(':')
+                && !label.contains(' ')
+            {
+                assert!(seen.insert(label.to_string()), "duplicate label {label}");
+            }
+        }
+    }
+}
