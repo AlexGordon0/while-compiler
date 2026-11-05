@@ -44,7 +44,7 @@ impl CodeGen {
         }
 
         code_gen.section(".text");
-        code_gen.raw("main:");
+        code_gen.label("main");
         code_gen.instr("push rbp");
         code_gen.instr("mov rbp, rsp");
         code_gen.instr("cmp rdi, 2");
