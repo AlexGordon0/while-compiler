@@ -91,6 +91,10 @@ fn parse_args() -> Result<Config, String> {
             )
         })?;
 
+    if emit_asm && positional.len() > 1 {
+        eprintln!("Argument will be ignored when --emit-asm option is enabled.");
+    }
+
     Ok(Config {
         file,
         initial_arg,
@@ -125,5 +129,6 @@ fn main() {
     )
     .unwrap_or_else(|e| {
         eprintln!("{e}");
+        process::exit(1);
     });
 }
