@@ -25,7 +25,7 @@ fn run_program(
     emit_asm: bool,
 ) -> Result<(), String> {
     let mut lexer = Lexer::new(program);
-    let tokens = lexer.lex().map_err(|e| format!("{e:?}"))?;
+    let tokens = lexer.lex().map_err(|e| e.to_string())?;
 
     if print_tokens {
         if !emit_asm {
@@ -36,7 +36,7 @@ fn run_program(
     }
 
     let mut parser = Parser::new(&tokens);
-    let ast = parser.parse().map_err(|e| format!("{e:?}"))?;
+    let ast = parser.parse().map_err(|e| e.to_string())?;
 
     if print_ast {
         if !emit_asm {
@@ -80,19 +80,21 @@ fn parse_args() -> Result<Config, String> {
     }
 
     let file = positional[0].clone();
-    let initial_arg = positional
-        .get(1)
-        .map(|s| s.parse::<i64>())
-        .transpose()
-        .map_err(|_| {
-            format!(
-                "Unable to parse {:?}. Argument must be an integer.",
-                positional.get(1)
-            )
-        })?;
 
+    let mut initial_arg = None;
     if emit_asm && positional.len() > 1 {
         eprintln!("Argument will be ignored when --emit-asm option is enabled.");
+    } else {
+        initial_arg = positional
+            .get(1)
+            .map(|s| s.parse::<i64>())
+            .transpose()
+            .map_err(|_| {
+                format!(
+                    "Unable to parse {:?}. Argument must be an integer.",
+                    positional.get(1)
+                )
+            })?;
     }
 
     Ok(Config {
